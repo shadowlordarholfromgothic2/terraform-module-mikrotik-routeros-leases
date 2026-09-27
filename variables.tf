@@ -1,46 +1,46 @@
-# Inputs are required unless they are genuinely nullable: the root module owns
-# the user-facing defaults that terraform.tfvars fills in, and this module owns
-# the validation, so neither is duplicated across the two.
-#
-# Every variable is typed and described — tflint's `recommended` preset fails the
-# build otherwise. Prefer several small `validation` blocks with one specific
-# error message each over a single compound condition.
+# This module deliberately knows nothing about Talos, Proxmox or clusters: it
+# takes a map of hosts and makes static DHCP reservations for them. Callers
+# project their own inventory into `hosts`, which keeps the module reusable for
+# anything else on the same router.
 
-variable "name" {
-  description = "Name of this deployment; prefixes the resources the module creates."
-  type        = string
+variable "hosts" {
+  description = "Static DHCP reservations to create, keyed by a stable name. The key is only an address in OpenTofu state; RouterOS identifies a lease by its MAC address."
+  type = map(object({
+    ip      = string
+    mac     = string
+    comment = optional(string)
+  }))
+
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{0,39}$", var.name))
-    error_message = "name must be lowercase alphanumeric with hyphens, start with a letter, and be at most 40 characters."
+    condition = alltrue([
+      for h in var.hosts : can(cidrnetmask("${h.ip}/32"))
+    ])
+    error_message = "Each host needs an IPv4 address without a prefix."
+  }
+  validation {
+    # Second nibble even: a unicast address, which is the only kind a DHCP
+    # client can present as its CHADDR.
+    condition = alltrue([
+      for h in var.hosts : can(regex("^[0-9A-Fa-f][02468AaCcEe](:[0-9A-Fa-f]{2}){5}$", h.mac))
+    ])
+    error_message = "Each host needs a unicast MAC address in aa:bb:cc:dd:ee:ff form."
+  }
+  validation {
+    condition = (
+      length(distinct([for h in var.hosts : h.ip])) == length(var.hosts) &&
+      length(distinct([for h in var.hosts : lower(h.mac)])) == length(var.hosts)
+    )
+    error_message = "IP addresses and MAC addresses must each be unique across hosts."
   }
 }
 
-variable "tags" {
-  description = "Extra tags applied alongside the tags this module always sets."
-  type        = list(string)
-  default     = []
+variable "server" {
+  description = "Name of the RouterOS DHCP server the leases belong to, as shown by `/ip/dhcp-server/print` (`defconf` on a stock MikroTik configuration). Null leaves the lease unbound, which matches any server — fine with a single DHCP server, ambiguous once VLANs each have their own."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.server == null ? true : trimspace(var.server) == var.server && var.server != ""
+    error_message = "server must be null or a non-empty DHCP server name without surrounding whitespace."
+  }
 }
-
-# An optional input: null is a meaningful value the module interprets, rather
-# than a default the root module has to restate.
-#
-# variable "example_optional" {
-#   description = "..."
-#   type        = number
-#   default     = null
-#   validation {
-#     condition     = var.example_optional == null ? true : var.example_optional > 0
-#     error_message = "example_optional must be null or a positive number."
-#   }
-# }
-
-# A structured input. `optional(...)` with a default keeps per-entry overrides
-# terse at the call site.
-#
-# variable "example_map" {
-#   description = "..."
-#   type = map(object({
-#     size   = string
-#     labels = optional(map(string), {})
-#   }))
-# }

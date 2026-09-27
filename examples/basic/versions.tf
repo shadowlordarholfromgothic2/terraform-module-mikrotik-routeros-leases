@@ -1,8 +1,8 @@
 terraform {
   required_version = ">= 1.9.0, < 2.0.0"
 
-  # Provider *configuration* stays in the root module; a child module only
-  # declares which providers it needs so it inherits the root's instances.
+  # An example is a root module, so this is where the provider is actually
+  # configured. The module itself only declares that it needs this provider.
   required_providers {
     routeros = {
       source  = "terraform-routeros/routeros"
