@@ -1,12 +1,12 @@
-# Module entry point. Keep resources here while the module is small; once it
-# grows past one concern, split it into files named after those concerns
-# (network.tf, compute.tf, ...) and disable `terraform_standard_module_structure`
-# in .tflint.hcl.
-#
-# Derived values belong in `locals` so that resource bodies stay declarative.
+resource "routeros_ip_dhcp_server_lease" "host" {
+  for_each = var.hosts
 
-locals {
-  # Tags/labels every resource in this module carries, so that a plan against an
-  # untouched configuration stays empty.
-  common_tags = sort(distinct(concat(["opentofu", var.name], var.tags)))
+  address = each.value.ip
+
+  # RouterOS stores and returns MACs uppercased, so normalize on the way in to
+  # keep plans empty regardless of how the caller writes them.
+  mac_address = upper(each.value.mac)
+
+  server  = var.server
+  comment = each.value.comment
 }
